@@ -1,10 +1,14 @@
+//------------------------------------------------------------------------------
+// MPU6050.cpp
+//------------------------------------------------------------------------------
+//
+
 // Header files
 //------------------------------------------------------------------------------
 
 #include <Arduino.h>
 #include <Wire.h>
 #include <math.h>
-#include "Condition.h"
 #include "MPU6050.h"
 
 // I2C address
@@ -31,6 +35,7 @@
 #define MPU6050_CONFIG              0x1A
 #define MPU6050_GYRO_CONFIG         0x1B
 #define MPU6050_ACCEL_CONFIG        0x1C
+#define MPU6050_ACCEL_CONFIG_2      0x1D
 
 #define MPU6050_ACCEL_XOUT_H        0x3B
 
@@ -48,7 +53,6 @@ MPU6050::MPU6050(uint8_t address){
   mpu_addr = address;
 }
 
-
 void MPU6050::initialize(){
   int16_t ax_os = 0, ay_os = 0, az_os = 0, gx_os = 0, gy_os = 0, gz_os = 0;
   float accel_scale = 1, gyro_scale = 1;
@@ -57,13 +61,15 @@ void MPU6050::initialize(){
   Wire.write(MPU6050_PWR_MGMT_1);  // register for power management
   Wire.write(0);                   // set to zero to wakes up the MPU-6050
   Wire.endTransmission(true);
-  setGyroScale(0);
-  setAccelScale(0);
+  setGyroScale(3);
+  setAccelScale(3);
   setDLPF(6);
   readOffSet();
 }
 
 void MPU6050::readRawData(int16_t* ax, int16_t* ay, int16_t* az, int16_t* gx, int16_t* gy, int16_t* gz){
+  int16_t buf_temp;
+
   Wire.beginTransmission(mpu_addr);
   Wire.write(MPU6050_ACCEL_XOUT_H);  // starting with register 0x3B (ACCEL_XOUT_H)
   Wire.endTransmission(false);
@@ -81,42 +87,36 @@ void MPU6050::readRawData(int16_t* ax, int16_t* ay, int16_t* az, int16_t* gx, in
 }
 
 void MPU6050::readScaledData(float* ax_s, float* ay_s, float* az_s, float* gx_s, float* gy_s, float* gz_s){
+  int16_t buf_temp;
+
   Wire.beginTransmission(mpu_addr);
   Wire.write(MPU6050_ACCEL_XOUT_H);  // starting with register 0x3B (ACCEL_XOUT_H)
   Wire.endTransmission(false);
   Wire.requestFrom(mpu_addr, 14, true);  // request a total of 14 registers
 
-  buf_ax = Wire.read() << 8 | Wire.read();  // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)
-  buf_ay = Wire.read() << 8 | Wire.read();  // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
-  buf_az = Wire.read() << 8 | Wire.read();  // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
+  *ax_s = ((Wire.read() << 8 | Wire.read()) - ax_os) * 9.81 / accel_scale;
+  *ay_s = ((Wire.read() << 8 | Wire.read()) - ay_os) * 9.81 / accel_scale;
+  *az_s = ((Wire.read() << 8 | Wire.read()) - az_os) * 9.81 / accel_scale;
 
   buf_temp = Wire.read() << 8 | Wire.read();
 
-  buf_gx = Wire.read() << 8 | Wire.read();  // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
-  buf_gy = Wire.read() << 8 | Wire.read();  // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
-  buf_gz = Wire.read() << 8 | Wire.read();  // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
+  *gx_s = ((Wire.read() << 8 | Wire.read()) - gx_os) / gyro_scale;
+  *gy_s = ((Wire.read() << 8 | Wire.read()) - gy_os) / gyro_scale;
+  *gz_s = ((Wire.read() << 8 | Wire.read()) - gz_os) / gyro_scale;
 
-  *ax_s = float(buf_ax - ax_os) * 9.81 / accel_scale;
-  *ay_s = float(buf_ay - ay_os) * 9.81 / accel_scale;
-  *az_s = float(buf_az - az_os) * 9.81 / accel_scale;
-
-  *gx_s = float(buf_gx - gx_os) / gyro_scale;
-  *gy_s = float(buf_gy - gy_os) / gyro_scale;
-  *gz_s = float(buf_gz - gz_os) / gyro_scale;
-
-//  *ax_s = float(buf_ax);
-//  *ay_s = float(buf_ay);
-//  *az_s = float(buf_az);
-//
-//  *gx_s = float(buf_gx);
-//  *gy_s = float(buf_gy);
-//  *gz_s = float(buf_gz);
 }
 
 void MPU6050::setDLPF(uint8_t bandwidth){
   Wire.beginTransmission(mpu_addr);
   Wire.write(MPU6050_CONFIG);
-  if (IsBetween(bandwidth, 0, 6))
+  if (bandwidth >=0 && bandwidth <= 6)
+    Wire.write(bandwidth);
+  else
+    Wire.write(0x00);
+
+  Wire.beginTransmission(mpu_addr);
+  Wire.write(MPU6050_ACCEL_CONFIG_2);
+  if (bandwidth >=0 && bandwidth <= 6)
     Wire.write(bandwidth);
   else
     Wire.write(0x00);
@@ -177,21 +177,8 @@ void MPU6050::setAccelScale(int accel){
 }
 
 void MPU6050::readOffSet(){
-  delay(3000);
-
-  Wire.beginTransmission(mpu_addr);
-  Wire.write(MPU6050_ACCEL_XOUT_H);  // starting with register 0x3B (ACCEL_XOUT_H)
-  Wire.endTransmission(false);
-  Wire.requestFrom(mpu_addr, 14, true);  // request a total of 14 registers
-
-  ax_os = Wire.read() << 8 | Wire.read();  // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)
-  ay_os = Wire.read() << 8 | Wire.read();  // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
-  az_os = Wire.read() << 8 | Wire.read();  // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
+  int16_t ax_los, ay_los, az_los, gx_los, gy_los, gz_los;
+  delay(1000);
+  readRawData(&ax_os, &ay_os, &az_os, &gx_os, &gy_os, &gz_os);
   az_os = 0;
-
-  buf_temp = Wire.read() << 8 | Wire.read();
-
-  gx_os = Wire.read() << 8 | Wire.read();  // 0x43 (GYRO_XOUT_H) & 0x44 (GYRO_XOUT_L)
-  gy_os = Wire.read() << 8 | Wire.read();  // 0x45 (GYRO_YOUT_H) & 0x46 (GYRO_YOUT_L)
-  gz_os = Wire.read() << 8 | Wire.read();  // 0x47 (GYRO_ZOUT_H) & 0x48 (GYRO_ZOUT_L)
 }

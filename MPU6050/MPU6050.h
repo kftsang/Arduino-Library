@@ -6,7 +6,6 @@ class MPU6050{
     MPU6050();
     MPU6050(uint8_t address);
 
-    int16_t buf_ax, buf_ay, buf_az, buf_temp, buf_gx, buf_gy, buf_gz;
     int16_t ax_os, ay_os, az_os, gx_os, gy_os, gz_os;
     float accel_scale, gyro_scale;
 
@@ -22,3 +21,4 @@ class MPU6050{
     uint8_t mpu_addr;
 };
 #endif
+
