@@ -178,7 +178,8 @@ void MPU6050::setAccelScale(int accel){
 
 void MPU6050::readOffSet(){
   int16_t ax_los, ay_los, az_los, gx_los, gy_los, gz_los;
-  delay(1000);
+
+  delay(1000);   // wait until the system is stablized
   readRawData(&ax_os, &ay_os, &az_os, &gx_os, &gy_os, &gz_os);
-  az_os = 0;
+  az_os = 0;     // set z offset to be 0 to account for gravity
 }
